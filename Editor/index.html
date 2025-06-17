@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneByOne Lyrics Editor</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #121212;
+      color: white;
+      margin: 0;
+      padding: 1rem;
+    }
+    .controls {
+      margin-bottom: 1rem;
+    }
+    button, input[type="file"] {
+      margin-right: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+    }
+    #main-wrapper {
+      display: flex;
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+    #lyrics-container {
+      flex: 1;
+      font-size: 1.8rem;
+      line-height: 2.4rem;
+      max-width: 60%;
+    }
+    #button-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      user-select: none;
+    }
+    .word {
+      background: none;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      display: inline-block;
+      position: relative;
+      color: white;
+    }
+    .word.marked {
+      color: #1db954;
+    }
+    .timestamp {
+      position: absolute;
+      top: -1.2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.7rem;
+      color: #aaa;
+    }
+    .mark-box {
+      width: 100px;
+      height: 100px;
+      background: #333;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .mark-box:hover {
+      background: #444;
+    }
+    .rewind-button {
+      padding: 0.5rem 1rem;
+      background: #1db954;
+      border: none;
+      border-radius: 5px;
+      font-size: 1rem;
+      color: white;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎵 OneByOne Lyrics Editor</h1>
+
+  <div class="controls">
+    <input type="file" accept="audio/*" id="audio-upload" />
+    <input type="file" accept=".txt" id="lyrics-upload" />
+    <button onclick="playPause()">▶️/⏸️</button>
+    <button onclick="rewind(10)">⏪ 10s</button>
+    <button onclick="rewind(5)">⏪ 5s</button>
+    <button onclick="changeSpeed(-0.1)">- Speed</button>
+    <button onclick="changeSpeed(0.1)">+ Speed</button>
+    <button onclick="exportJSON()">💾 Export JSON</button>
+  </div>
+
+  <audio id="audio" controls style="width: 100%; margin-bottom: 1rem;"></audio>
+  <div id="main-wrapper">
+    <div id="lyrics-container"></div>
+    <div id="button-panel">
+      <div class="mark-box" onclick="markCurrentWord()"></div>
+      <button class="rewind-button" onclick="rewindToLastWord()">🔙 К последнему слову</button>
+    </div>
+  </div>
+
+  <script>
+    const audio = document.getElementById('audio');
+    const container = document.getElementById('lyrics-container');
+    let wordData = [];
+    let lastMarkedIndex = -1;
+
+    document.getElementById('audio-upload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        audio.src = URL.createObjectURL(file);
+      }
+    });
+
+    document.getElementById('lyrics-upload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const text = ev.target.result.replace(/\n/g, ' ');
+          const words = text.split(/\s+/).filter(w => w.length > 0);
+          container.innerHTML = '';
+          wordData = words.map(w => ({ word: w, time: null }));
+          words.forEach((word, i) => {
+            const span = document.createElement('span');
+            span.className = 'word';
+            span.textContent = word;
+
+            const timeTag = document.createElement('div');
+            timeTag.className = 'timestamp';
+            timeTag.style.display = 'none';
+            span.appendChild(timeTag);
+
+            container.appendChild(span);
+            container.appendChild(document.createTextNode(' '));
+
+            wordData[i].span = span;
+            wordData[i].timeTag = timeTag;
+          });
+        };
+        reader.readAsText(file);
+      }
+    });
+
+    function playPause() {
+      if (audio.paused) audio.play();
+      else audio.pause();
+    }
+
+    function rewind(seconds) {
+      audio.currentTime = Math.max(0, audio.currentTime - seconds);
+    }
+
+    function changeSpeed(delta) {
+      audio.playbackRate = Math.max(0.25, Math.min(4, audio.playbackRate + delta));
+    }
+
+    function markCurrentWord() {
+      for (let i = 0; i < wordData.length; i++) {
+        if (wordData[i].time === null) {
+          wordData[i].time = audio.currentTime;
+          wordData[i].span.classList.add('marked');
+          wordData[i].timeTag.textContent = `(${wordData[i].time.toFixed(3)}s)`;
+          wordData[i].timeTag.style.display = 'block';
+          lastMarkedIndex = i;
+          break;
+        }
+      }
+    }
+
+    function rewindToLastWord() {
+      if (lastMarkedIndex !== -1 && wordData[lastMarkedIndex].time !== null) {
+        wordData[lastMarkedIndex].span.classList.remove('marked');
+        wordData[lastMarkedIndex].timeTag.style.display = 'none';
+        wordData[lastMarkedIndex].time = null;
+        audio.currentTime = Math.max(0, audio.currentTime - 1);
+
+        // Найдём новый последний индекс
+        for (let i = lastMarkedIndex - 1; i >= 0; i--) {
+          if (wordData[i].time !== null) {
+            lastMarkedIndex = i;
+            return;
+          }
+        }
+        lastMarkedIndex = -1;
+      }
+    }
+
+    function exportJSON() {
+      const output = {
+        spotify_uri: 'spotify:track:your_uri_here',
+        lyrics: [
+          {
+            start: 0,
+            words: wordData.filter(w => w.time !== null).map(w => ({
+              start: w.time,
+              word: w.word
+            }))
+          }
+        ]
+      };
+      const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'wordlrc.json';
+      a.click();
+    }
+  </script>
+</body>
+</html>
